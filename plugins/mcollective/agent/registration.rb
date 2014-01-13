@@ -25,12 +25,23 @@ module MCollective
         @dbname = config["registration.db"] || "mcollective"
         @yaml_dir = config["registration.extra_yaml_dir"] || false
 
-        Log.instance.info("Connecting to couchdb @ http://#{@host}:#{@port}/#{@dbname}")
+        Log.instance.info("Connecting to CouchDB @ http://#{@host}:#{@port}/#{@dbname}")
 
         @db = CouchRest.database!("http://#{@host}:#{@port}/#{@dbname}")
 
-        #@coll = @dbh.collection(@collection)
-        #@coll.create_index("fqdn", {:unique => true, :dropDups => true})
+        begin
+          @db.save_doc({
+            "_id" => "_design/registration", 
+            :views => {
+              :all => {
+                :map => "function(doc) { if (doc.key && doc.lastseen) emit(doc.key, doc._rev) }"
+              },
+            }
+          })
+          Log.instance.info("CouchDB registration view created")
+        rescue
+          Log.instance.info("CouchDB registration view already created")
+        end
       end
 
       def handlemsg(msg, connection)
@@ -58,22 +69,33 @@ module MCollective
           return nil
         end
 
+        doc = {
+          :key          => req[:fqdn], 
+          'identity'    => req[:identity],
+          'agentlist'   => req[:agentlist], 
+          'facts'       => req[:facts], 
+          'classes'     => req[:classes], 
+          'collectives' => req[:collectives], 
+          'agentlist'   => req[:agentlist], 
+          'lastseen'    => req[:lastseen]
+        }
+
         before = Time.now.to_f
+
+        # If there's already a record with the same key, add the id so
+        # we update it rather than create a new record.
+        records = @db.view('registration/all', { :key => req[:fqdn] })
+        if records['rows'].any?
+          doc.merge!('_id' => records['rows'].last['id'], '_rev' => records['rows'].last['value'])
+        end
+
         begin
-          response = @db.save_doc({ :key          => req[:fqdn], 
-                                    'identity'    => req[:identity],
-                                    'agentlist'   => req[:agentlist], 
-                                    'facts'       => req[:facts], 
-                                    'classes'     => req[:classes], 
-                                    'collectives' => req[:collectives], 
-                                    'agentlist'   => req[:agentlist], 
-                                    'lastseen'    => req[:lastseen]
-                                 })
+          response = @db.save_doc(doc)
         rescue => e
           Log.error("%s: %s: %s" % [e.backtrace.first, e.class, e.to_s])
         ensure
           after = Time.now.to_f
-          Log.instance.debug("Updated data for host #{req[:fqdn]} with id #{response['id']} in #{after - before}s")
+          Log.instance.info("Updated data for host #{req[:fqdn]} with id #{response['id']} rev #{response['rev']} in #{after - before}s")
         end
 
         nil
