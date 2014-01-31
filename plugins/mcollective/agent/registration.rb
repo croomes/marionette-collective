@@ -23,11 +23,16 @@ module MCollective
         @host = config["registration.host"] || "localhost"
         @port = config["registration.port"] || "5984"
         @dbname = config["registration.db"] || "mcollective"
+        @dbuser = config["registration.user"]
+        @dbpass = config["registration.password"]
         @yaml_dir = config["registration.extra_yaml_dir"] || false
 
-        Log.instance.info("Connecting to CouchDB @ http://#{@host}:#{@port}/#{@dbname}")
+        if @dbuser && @dbpass
+          dbauth = "#{@dbuser}:#{@dbpass}@"
+        end
 
-        @db = CouchRest.database!("http://#{@host}:#{@port}/#{@dbname}")
+        Log.instance.info("Connecting to CouchDB @ http://#{dbauth}#{@host}:#{@port}/#{@dbname}")
+        @db = CouchRest.database!("http://#{dbauth}#{@host}:#{@port}/#{@dbname}")
 
         begin
           @db.save_doc({
@@ -70,13 +75,14 @@ module MCollective
         end
 
         doc = {
-          :key          => req[:fqdn], 
+          '_id'         => req[:fqdn],
+          'key'         => req[:fqdn],
           'identity'    => req[:identity],
-          'agentlist'   => req[:agentlist], 
-          'facts'       => req[:facts], 
-          'classes'     => req[:classes], 
-          'collectives' => req[:collectives], 
-          'agentlist'   => req[:agentlist], 
+          'agentlist'   => req[:agentlist],
+          'facts'       => req[:facts],
+          'classes'     => req[:classes],
+          'collectives' => req[:collectives],
+          'agentlist'   => req[:agentlist],
           'lastseen'    => req[:lastseen]
         }
 
