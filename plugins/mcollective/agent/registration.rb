@@ -34,19 +34,6 @@ module MCollective
         Log.instance.info("Connecting to CouchDB @ http://#{dbauth}#{@host}:#{@port}/#{@dbname}")
         @db = CouchRest.database!("http://#{dbauth}#{@host}:#{@port}/#{@dbname}")
 
-        begin
-          @db.save_doc({
-            "_id" => "_design/registration", 
-            :views => {
-              :all => {
-                :map => "function(doc) { if (doc.key && doc.lastseen) emit(doc.key, doc._rev) }"
-              },
-            }
-          })
-          Log.instance.info("CouchDB registration view created")
-        rescue
-          Log.instance.info("CouchDB registration view already created")
-        end
       end
 
       def handlemsg(msg, connection)
@@ -88,11 +75,14 @@ module MCollective
 
         before = Time.now.to_f
 
-        # If there's already a record with the same key, add the id so
+        # If there's already a record with the same id, add the revision so
         # we update it rather than create a new record.
-        records = @db.view('registration/all', { :key => req[:fqdn] })
-        if records['rows'].any?
-          doc.merge!('_id' => records['rows'].last['id'], '_rev' => records['rows'].last['value'])
+        begin
+          result = @db.get(req[:fqdn])
+          if result
+            doc.merge!('_rev' => result['_rev'])
+          end
+        rescue
         end
 
         begin
@@ -101,7 +91,7 @@ module MCollective
           Log.error("%s: %s: %s" % [e.backtrace.first, e.class, e.to_s])
         ensure
           after = Time.now.to_f
-          Log.instance.info("Updated data for host #{req[:fqdn]} with id #{response['id']} rev #{response['rev']} in #{after - before}s")
+          Log.instance.info((result ? "Updated" : "Inserted") + " data for host #{req[:fqdn]} with id #{response['id']} rev #{response['rev']} in #{after - before}s")
         end
 
         nil
