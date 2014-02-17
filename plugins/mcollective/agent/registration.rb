@@ -26,7 +26,7 @@ module MCollective
         @dbuser = config["registration.user"]
         @dbpass = config["registration.password"]
         @yaml_dir = config["registration.extra_yaml_dir"] || false
-        @views = config["views"] || ["agentlist"]
+        @views = config["views"] || ["nodelist", "agentlist"]
 
         if @dbuser && @dbpass
           dbauth = "#{@dbuser}:#{@dbpass}@"
@@ -39,13 +39,13 @@ module MCollective
         @views.each do |view|
           create_view(view)
         end
-        
+
       end
-      
-      def create_view(view)       
-        begin          
+
+      def create_view(view)
+        begin
           @db.save_doc({
-            "_id" => "_design/#{view}", 
+            "_id" => "_design/#{view}",
             :views => {
               :all => {
                 :map => self.send("#{view}_map"),
@@ -58,26 +58,44 @@ module MCollective
           Log.instance.info("CouchDB #{view} view already created")
         end
       end
-      
+
       def agentlist_map
-        <<-EOS.gsub(/^ {8}/, "")
-          function(doc) { 
+        <<-EOS.gsub(/^ {10}/, "")
+          function(doc) {
             if (doc.key && doc.agentlist) {
-              doc.agentlist.forEach(function(agent) { 
-                emit(agent, 1); 
+              doc.agentlist.forEach(function(agent) {
+                emit(agent, 1);
               });
             }
-          }      
-          EOS
-      end
-      
-      def agentlist_reduce
-        <<-EOS.gsub(/^ {8}/, "")
-          function(keys, values) { 
-            return sum(values); 
           }
           EOS
-      end                  
+      end
+
+      def agentlist_reduce
+        <<-EOS.gsub(/^ {10}/, "")
+          function(keys, values) {
+            return sum(values);
+          }
+          EOS
+      end
+
+      def nodelist_map
+        <<-EOS.gsub(/^ {10}/, "")
+          function(doc) {
+            if (doc.key) {
+              emit(doc.key, 1);
+            }
+          }
+          EOS
+      end
+
+      def nodelist_reduce
+        <<-EOS.gsub(/^ {10}/, "")
+          function(keys, values) {
+            return sum(values);
+          }
+          EOS
+      end
 
       def handlemsg(msg, connection)
         req = msg[:body]
@@ -106,6 +124,7 @@ module MCollective
 
         doc = {
           '_id'         => req[:fqdn],
+          'type'        => 'Node',
           'key'         => req[:fqdn],
           'identity'    => req[:identity],
           'agentlist'   => req[:agentlist],
